@@ -6,11 +6,10 @@ import re
 import os
 import glob
 import pandas as pd
-import matplotlib.pyplot as plt # type: ignore
 
 # Extract sequence names from FASTA and QC Excel
 def parse_identifier(full_sequence_name):
-    match = re.match(r'^>?([\w-]+?)-?(H|L)(\d+)', full_sequence_name)
+    match = re.match(r'^>?(.+)-(H|L)(\d+)', full_sequence_name)
     if match:
         prefix = match.group(1)
         chain_type = match.group(2)
@@ -66,41 +65,6 @@ def convert_xls_to_xlsx(xls_path):
     os.remove(xls_path)
     return xlsx_path  # Return the path to the new .xlsx file
 
-def save_histogram(category_counts, output_dir):
-    categories = list(category_counts.keys())
-    counts = [category_counts[cat] for cat in categories]
-
-    plt.figure(figsize=(10, 6))
-    plt.bar(categories, counts, color='skyblue')
-    plt.xlabel('Category')
-    plt.ylabel('Number of Pairs')
-    plt.title('Distribution of Sequence Pairs by Category')
-    plt.xticks(categories)
-    plt.grid(axis='y', linestyle='--', alpha=0.7)
-
-    histogram_path = os.path.join(output_dir, 'category_distribution_histogram.png')
-    plt.savefig(histogram_path)
-    print(f"Histogram saved to {histogram_path}")
-    plt.close()
-
-def print_final_pair_categories(pairs, debug_stream):
-    print("Final Categories for Sequence Pairs:")
-    for base_id, categories in pairs.items():
-        if 'H' in categories and 'L' in categories:
-            final_category = max(categories.values())
-            print(f"Pair {base_id} (Heavy Chain: Category {categories['H']}, Light Chain: Category {categories['L']}) - Final Category: {final_category}")
-            debug_stream.append(f"Pair {base_id} (Heavy Chain: Category {categories['H']}, Light Chain: Category {categories['L']}) - Final Category: {final_category}")
-        elif 'H' in categories:
-            print(f"Pair {base_id} (Heavy Chain: Category {categories['H']}, Light Chain: MISSING) - Final Category: 7")
-            debug_stream.append(f"Pair {base_id} (Heavy Chain: Category {categories['H']}, Light Chain: MISSING) - Final Category: 7")
-        elif 'L' in categories:
-            print(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: Category {categories['L']}) - Final Category: 7")
-            debug_stream.append(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: Category {categories['L']}) - Final Category: 7")
-        else:
-            print(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: MISSING) - Final Category: 7")
-            debug_stream.append(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: MISSING) - Final Category: 7")
-
-
 # Provide file dialog boxes for users to specify:
 # (I) Input directory containing Excel QC files (including files for multiple reads)
 # (II) Input directory folder containing FASTA sequence files
@@ -149,7 +113,7 @@ def process_antibody_data():
     for fasta_file in glob.glob(os.path.join(fasta_file_dir, '*.fasta')):
         for record in SeqIO.parse(fasta_file, "fasta"):
             all_sequences.append(record)
-        
+
     # Save the combined Excel workbook
     combined_excel_path = os.path.join(output_dir, "Combined_qc_data.xlsx")
     main_wb.save(combined_excel_path)
@@ -172,51 +136,48 @@ def process_antibody_data():
     seq_subsets = {i: [] for i in range(1, 8)}  # 8 is not inclusive, therefore this range goes up to Category 7
     debug_output = []
 
+    # Process and read QC data and prepare data structure for light/heavy chain sequence pairing 
     '''
-    VARIABLE EXAMPLES
+    EXAMPLES
     base_id: TDM-1-1
     full_id: TDM-1-L1
     chain_type: L
     '''
-
-    # Process and read QC data and prepare data structure for light/heavy chain sequence pairing 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
         template_name = row[header.index('TemplateName')].value
         crl = row[header.index('CRL')].value
         qs = row[header.index('QualitySCore')].value
-        base_id, full_id, chain_type = parse_identifier(template_name)
+        _, full_id, chain_type = parse_identifier(template_name)
         if full_id: # Check if the row has an id
             category = determine_category(crl, qs)
-            if base_id not in pairs: 
-                pairs[base_id] = {'H': 7, 'L': 7}  # Initialize as Category 7 if TemplateName id not yet an entry
-            pairs[base_id][chain_type] = min(pairs[base_id].get(chain_type, 7), category) # Set as highest quality category (smallest #) from multiple reads of a single sequence chain (a.k.a single full_id)
+            base_id, _, _ = parse_identifier(template_name) # Parse QC Excel column 'TemplateName'
+            if base_id not in pairs: # pairs is a dictionary contain the Category data for different sequence entries
+                pairs[base_id] = {'H': 7, 'L': 7}  # Assume missing and assign Category 7 unless found
+            '''
+            PSEUDOCODE for above line:
+            if "TDM-1-2" not in pairs:
+                pairs["TDM-1-2"] = {'H': 7, 'L': 7}
+            '''
+            pairs[base_id][chain_type] = min(pairs[base_id].get(chain_type, 7), category) # Identify highest quality category (smallest #) from multiple reads of a single sequence chain (a.k.a single full_id)
             row[header.index('Chain Category')].value = category  # Add 'Chain Category' value to Excel output file
-            debug_output.append(f"QC Entry: {template_name}, CRL: {crl}, QS: {qs}, Chain: {chain_type}, Chain Category: {category}")
+            debug_output.append(f"TemplateName: {template_name}, CRL: {crl}, QS: {qs}, Chain: {chain_type}, Category: {category}")
 
-    # Identify Pair Category for QC Pairs
+    # Set Pair Category once all entries processed and log the final pair category
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
         template_name = row[header.index('TemplateName')].value
         base_id, _, _ = parse_identifier(template_name)
         if base_id in pairs and 'H' in pairs[base_id] and 'L' in pairs[base_id]:
             pair_category = max(pairs[base_id].values()) # Assign lower quality category (larger #) from between the heavy and light chain of the base_id 
             row[header.index('Pair Category')].value = pair_category # Add 'Pair Category' value to Excel output file
-            debug_output.append(f"QC H/L Chain Pairing: {template_name}, Pair Category: {pair_category}, Determined by: {'H' if pairs[base_id]['H'] == pair_category else 'L'}")
+            debug_output.append(f"Pair TemplateName: {template_name}, Pair Category: {pair_category}, Determined by: {'H' if pairs[base_id]['H'] == pair_category else 'L'}")
 
-    # Identify which FASTA sequences missing QC entries (don't initialize yet since that throws off the debugging output)
+    # Process and read FASTA sequences
     for sequence in SeqIO.parse(combined_fasta_path, "fasta"):
-        base_id, full_id, chain_type = parse_identifier(sequence.id) # Parse FASTA sequence id strings   
-        if base_id not in pairs: # a.k.a sequences that are missing QC entries
-            print(f"{full_id} missing QC entry!")
-            debug_output.append(f"{full_id} missing QC entry!") 
-
-    # Identify Pair Category for FASTA Pairs
-    for sequence in SeqIO.parse(combined_fasta_path, "fasta"):
-        base_id, full_id, chain_type = parse_identifier(sequence.id) # Parse FASTA sequence id strings      
-        if base_id not in pairs: # This type, initialize missing pairs
-            pairs[base_id] = {'H': 7, 'L': 7}  # Initialize if not in pairs from Excel 
-        pair_category = max(pairs[base_id].values()) # Assign lower quality category (larger #) from between the heavy and light chain of the base_id 
-        seq_subsets[pair_category].append((sequence.id, str(sequence.seq))) # Add triaged sequence to category-specific FASTA file
-        debug_output.append(f"FASTA Sequence: {sequence.id}, Pair Category: {pair_category}")
+        base_id, _, _ = parse_identifier(sequence.id) # Parse FASTA sequence id strings
+        if base_id in pairs and 'H' in pairs[base_id] and 'L' in pairs[base_id]:
+            assigned_category = max(pairs[base_id].values()) # Assign lower quality category (larger #) from between the heavy and light chain of the base_id 
+            seq_subsets[assigned_category].append((sequence.id, str(sequence.seq))) # Add triaged sequence to category-specific FASTA file
+            debug_output.append(f"FASTA ID: {sequence.id}, Assigned Category: {assigned_category}")
 
     # Save sequences to separate output FASTA files in user-designated output directory
     for index, sequences in seq_subsets.items():
@@ -225,40 +186,17 @@ def process_antibody_data():
             for seq_id, seq in sequences:
                 file.write(f'>{seq_id}\n{seq}\n')
 
-    category_counts = {i: 0 for i in range(1, 8)}  # Initialize counts to 0 for categories 1 to 7
-
-    # Count up number of pairs in each category
-    for base_id, categories in pairs.items():
-        if 'H' in categories and 'L' in categories:
-            final_category = max(categories.values())
-            category_counts[final_category] += 1
-    # Print category statistics and export statistics to log
-    total_pairs = sum(category_counts.values())
-    print("Category Statistics:")
-    debug_output.append("Category Statistics:")
-    for category, count in category_counts.items():
-        percent = (count / total_pairs * 100) if total_pairs > 0 else 0
-        print(f"Category {category}: {count} pairs, {percent:.2f}%")
-        debug_output.append(f"Category {category}: {count} pairs, {percent:.2f}%")
-    print(f"Total Pairs: {total_pairs}")
-    debug_output.append(f"Total Pairs: {total_pairs}")
-
     # Save the modified Excel workbook (which includes the 2 new Category columns) in user-designated output directory
     new_excel_file_name = 'COMBINED_QC_DATA_WITH_CATEGORIES.xlsx'
     new_file_path = os.path.join(output_dir, new_excel_file_name)
-    wb.save(new_file_path)    
+    wb.save(new_file_path)
 
     # Save debugging output to log file in user-designated output directory
     log_file_path = os.path.join(output_dir, 'Triage_log.txt')
     with open(log_file_path, 'w') as log_file:
         log_file.write('\n'.join(debug_output))
-    save_histogram(category_counts, output_dir) # generate and save histogram of results to output directory
 
     print("Files and logs have been successfully saved to the selected directory.")
-
-    # DEBUGGING
-    # print_final_pair_categories(pairs, debug_output)
-    print(f"Pairs: {pairs}")
 
 if __name__ == "__main__":
     process_antibody_data()

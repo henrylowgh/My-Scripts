@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt # type: ignore
 
 # Extract sequence names from FASTA and QC Excel
 def parse_identifier(full_sequence_name):
-    match = re.match(r'^>?([\w-]+?)-?(H|L)(\d+)', full_sequence_name)
+    match = re.match(r'^>?(\w+-?\w*)[-_](H|L)(\d+)', full_sequence_name)
     if match:
         prefix = match.group(1)
         chain_type = match.group(2)
@@ -202,21 +202,17 @@ def process_antibody_data():
             row[header.index('Pair Category')].value = pair_category # Add 'Pair Category' value to Excel output file
             debug_output.append(f"QC H/L Chain Pairing: {template_name}, Pair Category: {pair_category}, Determined by: {'H' if pairs[base_id]['H'] == pair_category else 'L'}")
 
-    # Identify which FASTA sequences missing QC entries (don't initialize yet since that throws off the debugging output)
-    for sequence in SeqIO.parse(combined_fasta_path, "fasta"):
-        base_id, full_id, chain_type = parse_identifier(sequence.id) # Parse FASTA sequence id strings   
-        if base_id not in pairs: # a.k.a sequences that are missing QC entries
-            print(f"{full_id} missing QC entry!")
-            debug_output.append(f"{full_id} missing QC entry!") 
-
     # Identify Pair Category for FASTA Pairs
     for sequence in SeqIO.parse(combined_fasta_path, "fasta"):
         base_id, full_id, chain_type = parse_identifier(sequence.id) # Parse FASTA sequence id strings      
-        if base_id not in pairs: # This type, initialize missing pairs
-            pairs[base_id] = {'H': 7, 'L': 7}  # Initialize if not in pairs from Excel 
-        pair_category = max(pairs[base_id].values()) # Assign lower quality category (larger #) from between the heavy and light chain of the base_id 
-        seq_subsets[pair_category].append((sequence.id, str(sequence.seq))) # Add triaged sequence to category-specific FASTA file
-        debug_output.append(f"FASTA Sequence: {sequence.id}, Pair Category: {pair_category}")
+        if base_id not in pairs: # a.k.a sequences that are missing QC entries
+            #pairs[base_id] = {'H': 7, 'L': 7}  # Initialize if not in pairs from Excel
+            print(f"{full_id} missing QC entry!")
+            debug_output.append(f"{full_id} missing QC data!")
+        else:   
+            pair_category = max(pairs[base_id].values()) # Assign lower quality category (larger #) from between the heavy and light chain of the base_id 
+            seq_subsets[pair_category].append((sequence.id, str(sequence.seq))) # Add triaged sequence to category-specific FASTA file
+            debug_output.append(f"FASTA Sequence: {sequence.id}, Pair Category: {pair_category}")
 
     # Save sequences to separate output FASTA files in user-designated output directory
     for index, sequences in seq_subsets.items():

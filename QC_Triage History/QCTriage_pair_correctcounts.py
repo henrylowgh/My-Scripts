@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt # type: ignore
 
 # Extract sequence names from FASTA and QC Excel
 def parse_identifier(full_sequence_name):
-    match = re.match(r'^>?([\w-]+?)-?(H|L)(\d+)', full_sequence_name)
+    match = re.match(r'^>?(\w+-?\w*)[-_](H|L)(\d+)', full_sequence_name)
     if match:
         prefix = match.group(1)
         chain_type = match.group(2)
