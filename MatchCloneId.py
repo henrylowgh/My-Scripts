@@ -37,6 +37,8 @@ def process_files(hybridoma_path, qc_path):
 def main():
     hybridoma_path = load_file("Select the Hybridoma Excel File")
     qc_path = load_file("Select the QC Excel File")
+    if not hybridoma_path or not qc_path:
+        return print("Directory selection incomplete or incorrect file format, exiting the script.")
 
     updated_qc_data = process_files(hybridoma_path, qc_path)
 
