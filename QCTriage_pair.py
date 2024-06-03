@@ -7,6 +7,8 @@ import os
 import glob
 import pandas as pd
 import matplotlib.pyplot as plt # type: ignore
+import numpy as np
+
 
 # Extract sequence names from FASTA and QC Excel
 def parse_identifier(full_sequence_name):
@@ -99,6 +101,103 @@ def print_final_pair_categories(pairs, debug_stream):
         else:
             print(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: MISSING) - Final Category: 7")
             debug_stream.append(f"Pair {base_id} (Heavy Chain: MISSING, Light Chain: MISSING) - Final Category: 7")
+
+def plot_quality_scatter(pairs, output_dir):
+    # Prepare a dictionary to count occurrences of quality pairs
+    quality_pair_counts = {}
+    
+    # Iterate through pairs and count quality categories
+    for base_id, categories in pairs.items():
+        if 'b' in categories and 'a' in categories:
+            pair = (categories['a'], categories['b'])
+            if pair not in quality_pair_counts:
+                quality_pair_counts[pair] = 0
+            quality_pair_counts[pair] += 1
+
+    # Prepare data for plotting
+    light_chain_qualities = [pair[0] for pair in quality_pair_counts]
+    heavy_chain_qualities = [pair[1] for pair in quality_pair_counts]
+    counts = [quality_pair_counts[pair] for pair in quality_pair_counts]
+
+    # Create the scatterplot
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(light_chain_qualities, heavy_chain_qualities, s=np.array(counts) * 10, c='blue', alpha=0.5, edgecolors='w', linewidth=0.5)  # Scaled size
+    plt.title('Scatterplot of Light and Heavy Chain Quality Categories')
+    plt.xlabel('Light Chain Quality Category')
+    plt.ylabel('Heavy Chain Quality Category')
+    plt.grid(True)
+
+    # Adding annotations for each point with the count of occurrences
+    for (light, heavy), count in quality_pair_counts.items():
+        plt.annotate(count, (light, heavy), textcoords="offset points", xytext=(0,10), ha='center')
+
+    # Save the plot to the specified output directory
+    scatterplot_path = os.path.join(output_dir, 'quality_category_scatterplot.png')
+    plt.savefig(scatterplot_path)
+    plt.close()
+    print(f"Scatterplot saved to {scatterplot_path}")
+
+
+def plot_quality_heatmap(pairs, output_dir):
+    # Initial setup for the combined heatmap
+    max_category = 7  # Since categories range from 1 to 7
+    combined_frequency_matrix = np.zeros((max_category, max_category))
+    combined_total_counts = 0
+
+    # Categorize pairs by prefix
+    prefix_dict = {}
+    for base_id, categories in pairs.items():
+        prefix = base_id.split('-')[0]  # Extract prefix
+        if prefix not in prefix_dict:
+            prefix_dict[prefix] = {}
+        prefix_dict[prefix][base_id] = categories
+
+        # Populate the combined frequency matrix
+        if 'b' in categories and 'a' in categories:
+            y_index = categories['b'] - 1
+            x_index = categories['a'] - 1
+            combined_frequency_matrix[y_index, x_index] += 1
+            combined_total_counts += 1
+
+    # Generate and save the combined heatmap
+    save_heatmap(combined_frequency_matrix, combined_total_counts, max_category, output_dir, 'All Boxes')
+
+    # Generate and save heatmaps for each prefix
+    for prefix, prefixed_pairs in prefix_dict.items():
+        frequency_matrix = np.zeros((max_category, max_category))
+        total_counts = 0
+
+        for base_id, categories in prefixed_pairs.items():
+            if 'b' in categories and 'a' in categories:
+                y_index = categories['b'] - 1
+                x_index = categories['a'] - 1
+                frequency_matrix[y_index, x_index] += 1
+                total_counts += 1
+
+        save_heatmap(frequency_matrix, total_counts, max_category, output_dir, prefix)
+
+def save_heatmap(frequency_matrix, total_counts, max_category, output_dir, prefix):
+    fig, ax = plt.subplots(figsize=(10, 8))
+    cax = ax.matshow(frequency_matrix, cmap='viridis')
+    fig.colorbar(cax)
+
+    # Calculate percentages and add annotations
+    for (i, j), value in np.ndenumerate(frequency_matrix):
+        if value != 0:
+            percentage = value / total_counts
+            ax.text(j, i, f"{int(value)}\n({percentage:.2%})", ha='center', va='center', color='white')
+
+    plt.xticks(range(max_category), range(1, max_category + 1))
+    plt.yticks(range(max_category), range(1, max_category + 1))
+    plt.title(f'Heatmap of {prefix} Light and Heavy Chain Quality Category Combinations')
+    plt.xlabel('Light Chain Quality Category')
+    plt.ylabel('Heavy Chain Quality Category')
+    
+    heatmap_path = os.path.join(output_dir, f'{prefix}_quality_heatmap.png')
+    plt.savefig(heatmap_path)
+    plt.close()
+    print(f"Heatmap for {prefix} saved to {heatmap_path}")
+    
 
 
 # Provide file dialog boxes for users to specify:
@@ -244,6 +343,9 @@ def process_antibody_data():
         seq_subsets[pair_category].append((sequence.id, str(sequence.seq))) # Add triaged sequence to category-specific FASTA file
         debug_output.append(f"FASTA Sequence: {sequence.id}, Pair Category: {pair_category}")
     
+    plot_quality_scatter(pairs, output_dir) # plot scatterplot
+    plot_quality_heatmap(pairs, output_dir) # plot heatmap
+
     # Save sequences to separate output FASTA files in user-designated output directory
     for index, sequences in seq_subsets.items():
         file_name = f'Category_{index}_paired_sequences.fasta'
@@ -253,21 +355,47 @@ def process_antibody_data():
 
     category_counts = {i: 0 for i in range(1, 8)}  # Initialize counts to 0 for categories 1 to 7
 
-    # Count up number of pairs in each category
+    # Initialize the dictionary to store category counts for each prefix
+    prefix_category_counts = {}
+    total_category_counts = {i: 0 for i in range(1, 8)}  # Initialize total counts across all prefixes
+
+    # Organize pairs by prefix and count categories
     for base_id, categories in pairs.items():
+        prefix = base_id.split('-')[0]
+        if prefix not in prefix_category_counts:
+            prefix_category_counts[prefix] = {i: 0 for i in range(1, 8)}
+
         if 'b' in categories and 'a' in categories:
             final_category = max(categories.values())
-            category_counts[final_category] += 1
-    # Print category statistics and export statistics to log
-    total_pairs = sum(category_counts.values())
-    print("Category Statistics:")
-    debug_output.append("Category Statistics:")
-    for category, count in category_counts.items():
+            prefix_category_counts[prefix][final_category] += 1
+            total_category_counts[final_category] += 1
+
+    # Print and log category statistics for each prefix
+    print("Category Statistics by Prefix:")
+    debug_output.append("Category Statistics by Prefix:")
+    for prefix, counts in prefix_category_counts.items():
+        total_pairs = sum(counts.values())
+        print(f"Statistics for {prefix}:")
+        debug_output.append(f"Statistics for {prefix}:")
+        for category, count in sorted(counts.items()):
+            percent = (count / total_pairs * 100) if total_pairs > 0 else 0
+            print(f"Category {category}: {count} pairs, {percent:.2f}%")
+            debug_output.append(f"Category {category}: {count} pairs, {percent:.2f}%")
+        print(f"Total Pairs for {prefix}: {total_pairs}\n")
+        debug_output.append(f"Total Pairs for {prefix}: {total_pairs}\n")
+
+    # Print and log total category statistics across all prefixes
+    total_pairs = sum(total_category_counts.values())
+    print("Total Category Statistics:")
+    debug_output.append("Total Category Statistics:")
+    for category, count in sorted(total_category_counts.items()):
         percent = (count / total_pairs * 100) if total_pairs > 0 else 0
         print(f"Category {category}: {count} pairs, {percent:.2f}%")
         debug_output.append(f"Category {category}: {count} pairs, {percent:.2f}%")
-    print(f"Total Pairs: {total_pairs}")
-    debug_output.append(f"Total Pairs: {total_pairs}")
+    print(f"Total Pairs across all prefixes: {total_pairs}")
+    debug_output.append(f"Total Pairs across all prefixes: {total_pairs}")
+    
+    #summarize_category_statistics(pairs, debug_output)
 
     # Save the modified Excel workbook (which includes the 2 new Category columns) in user-designated output directory
     new_excel_file_name = 'COMBINED_QC_DATA_WITH_CATEGORIES.xlsx'
@@ -278,7 +406,7 @@ def process_antibody_data():
     log_file_path = os.path.join(output_dir, 'Triage_log.txt')
     with open(log_file_path, 'w') as log_file:
         log_file.write('\n'.join(debug_output))
-    save_histogram(category_counts, output_dir) # generate and save histogram of results to output directory
+    save_histogram(total_category_counts, output_dir) # generate and save histogram of results to output directory
 
     print("Files and logs have been successfully saved to the selected directory.")
 

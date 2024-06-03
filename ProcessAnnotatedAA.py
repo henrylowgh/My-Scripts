@@ -6,7 +6,7 @@ import re
 
 # Function to extract sequence names
 def parse_identifier(full_sequence_name):
-    match = re.match(r'^#\s?([\w-]+?)-(H|L)(\d+)', full_sequence_name)
+    match = re.match(r'^#\s?([\w-]+?)-(b|a)(\d+)', full_sequence_name)
     if match:
         prefix = match.group(1)
         chain_type = match.group(2)
@@ -48,12 +48,12 @@ def parse_and_reorder_blocks(file_path, output_directory):
             main_id, full_id, chain_type = parse_identifier(header)
             # print(f"Extracted IDs - Main ID: {main_id}, Full ID: {full_id}, Chain Type: {chain_type}")  # Debug print
 
-            if chain_type == 'H':
+            if chain_type == 'b':
                 if sequence_present:
                     heavy_chains[main_id] = {'block': block + '//', 'name': header}
                 else:
                     missing_sequence_data.append((header, 'Header present but empty sequence for heavy chain (meaning ANARCI failed to annotate)'))
-            elif chain_type == 'L':
+            elif chain_type == 'a':
                 if sequence_present:
                     light_chains[main_id] = {'block': block + '//', 'name': header}
                 else:
