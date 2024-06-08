@@ -9,8 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt # type: ignore 
 import numpy as np  
 
-
-# Extract sequence names from FASTA and QC Excel
+# Extract sequence names from FASTA and Excel files
 def parse_identifier(full_sequence_name):
     match = re.match(r'^>?([\w-]+?)-?(b|a)(\d+)', full_sequence_name)
     if match:
