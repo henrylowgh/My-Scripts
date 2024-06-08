@@ -14,6 +14,7 @@ def parse_identifier(full_sequence_name):
         return f"{prefix}-{number}", f"{prefix}-{chain_type}{number}", chain_type
     return None, None, None
 
+# Reorder data structure
 def parse_and_reorder_blocks(file_path, output_directory):
     try:
         with open(file_path, 'r') as file:
