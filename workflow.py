@@ -19,7 +19,7 @@ def parse_identifier(full_sequence_name):
         return f"{prefix}-{number}", f"{prefix}-{number}{chain_type}", chain_type
     return None, None, None
 
-# assign category
+# Function for category aasignment
 def determine_category(crl, qs):
     # Ensure that CRL and QualityScore are not None and are integers
     if crl is None or qs is None:
