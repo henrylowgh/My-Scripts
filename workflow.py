@@ -6,8 +6,8 @@ import re
 import os
 import glob
 import pandas as pd
-import matplotlib.pyplot as plt # type: ignore
-import numpy as np
+import matplotlib.pyplot as plt # type: ignore 
+import numpy as np  
 
 
 # Extract sequence names from FASTA and QC Excel
@@ -20,16 +20,7 @@ def parse_identifier(full_sequence_name):
         return f"{prefix}-{number}", f"{prefix}-{number}{chain_type}", chain_type
     return None, None, None
 
-# Triage sequences to one of 7 categories
-'''
-			1. CRL >= 500 & QS >= 40
-			2. CRL >= 500 & QS of 25-39
-			3. CRL >= 500 & QS < 25
-			4. CRL < 500 & QS >= 40
-			5. CRL < 500 & QS of 25-39
-			6. CRL < 500 & QS < 25
-            7. Pairs that are missing heavy or light chain FASTA sequence OR missing QC data for either sequence 
-'''
+# assign category
 def determine_category(crl, qs):
     # Ensure that CRL and QualityScore are not None and are integers
     if crl is None or qs is None:
@@ -276,20 +267,6 @@ def process_antibody_data():
     seq_subsets = {i: [] for i in range(1, 8)}  # 8 is not inclusive, therefore this range goes up to Category 7
     debug_output = [] # Initialize debugging output list stream
     fasta_sequence_ids = set()  # Set to track sequence IDs from FASTA files
-
-    '''
-    VARIABLE EXAMPLES
-    base_id: B1-1 (prefix-number)
-    full_id: B1-1L (prefix-number_chain type)
-    chain_type: L (chain type)
-
-    base_id: B1-1 (prefix-number)
-    full_id: B1-1a (prefix-number_chain type)
-    chain_type: a (chain type)
-
-    a = Light chain
-    b = Heavy chain
-    '''
 
     # Process QC data entries and assign Chain Category in the QC data (but not Pair Category yet)
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
